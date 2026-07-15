@@ -4,20 +4,25 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {Engine} from "../src/Engine.sol";
+import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
 
 contract EngineTest is Test {
+    uint8 constant FEED_DECIMALS = 8;
+    int256 constant WETH_USD_PRICE = 2000e8;
+
     Engine engine;
     ERC20Mock weth;
+    MockV3Aggregator wethFeed;
     address USER = makeAddr("user");
 
     function setUp() public {
         weth = new ERC20Mock();
+        wethFeed = new MockV3Aggregator(FEED_DECIMALS, WETH_USD_PRICE);
 
-        // priceFeed 목업 주소 + engine 배포
         address[] memory tokens = new address[](1);
         tokens[0] = address(weth);
         address[] memory feeds = new address[](1);
-        feeds[0] = makeAddr("wethPriceFeed");
+        feeds[0] = address(wethFeed);
         engine = new Engine(tokens, feeds);
 
         weth.mint(USER, 10e18);
@@ -84,11 +89,27 @@ contract EngineTest is Test {
         engine.depositCollateral(address(weth), 1e18);
     }
 
-    function test_constructor_setsPriceFeedsAndTokens() public {
-        assertEq(engine.getPriceFeed(address(weth)), makeAddr("wethPriceFeed"));
+    function test_constructor_setsPriceFeedsAndTokens() public view {
+        assertEq(engine.getPriceFeed(address(weth)), address(wethFeed));
 
         address[] memory tokens = engine.getCollateralTokens();
         assertEq(tokens.length, 1);
         assertEq(tokens[0], address(weth));
+    }
+
+    function test_priceFeed_returnsInitialAnswer() public view {
+        (, int256 price,,,) = wethFeed.latestRoundData();
+        assertEq(price, WETH_USD_PRICE);
+        assertEq(wethFeed.decimals(), FEED_DECIMALS);
+    }
+
+    function test_priceFeed_updateAnswer() public {
+        wethFeed.updateAnswer(1500e8);
+
+        (uint80 roundId, int256 price,,, uint80 answeredInRound) = wethFeed.latestRoundData();
+        assertEq(price, 1500e8);
+        // updateAnswer 는 라운드를 1 증가시킨다 (생성자에서 1라운드 -> 2)
+        assertEq(roundId, 2);
+        assertEq(answeredInRound, 2);
     }
 }
