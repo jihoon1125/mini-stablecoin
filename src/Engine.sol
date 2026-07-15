@@ -56,4 +56,16 @@ contract Engine is ReentrancyGuard {
             revert Engine__TransferFailed();
         }
     }
+
+    function getCollateralBalance(address user, address token) external view returns (uint256) {
+        return s_collateral[user][token];
+    }
+
+    function getPriceFeed(address token) external view returns (address) {
+        return s_priceFeeds[token];
+    }
+
+    function getCollateralTokens() external view returns (address[] memory) {
+        return s_collateralTokens;
+    }
 }
