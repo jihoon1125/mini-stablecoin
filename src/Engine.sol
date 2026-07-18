@@ -7,6 +7,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {StableCoin} from "./StableCoin.sol";
 
 contract Engine is ReentrancyGuard {
+    uint256 private constant LIQUIDATION_THRESHOLD = 50;
+    uint256 private constant LIQUIDATION_PRECISION = 100;
+    uint256 private constant PRECISION = 1e18;
+    uint256 private constant MIN_HEALTH_FACTOR = 1e18;
+
     error Engine__NeedsMoreThanZero();
     error Engine__TokenNotAllowed();
     error Engine__TransferFailed();
@@ -64,9 +69,21 @@ contract Engine is ReentrancyGuard {
 
     function mintDsc(uint256 amountDscToMint) external moreThanZero(amountDscToMint) nonReentrant {
         s_dscMinted[msg.sender] += amountDscToMint;
-        _revertIfHealthFactorBroken(msg.sender); // 화요일에 구현
+        _revertIfHealthFactorBroken(msg.sender);
         bool minted = i_dsc.mint(msg.sender, amountDscToMint);
         if (!minted) revert Engine__MintFailed();
+    }
+
+    function _healthFactor(address user) private view returns (uint256) {
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
+        if (totalDscMinted == 0) return type(uint256).max; // 부채 없음 = HF 무한대 (design.md §3)
+        uint256 adjustedCollateral = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
+        return (adjustedCollateral * PRECISION) / totalDscMinted;
+    }
+
+    function _revertIfHealthFactorBroken(address user) internal view {
+        uint256 hf = _healthFactor(user);
+        if (hf < MIN_HEALTH_FACTOR) revert Engine__BreaksHealthFactor(hf);
     }
 
     function _getAccountInformation(address user)
