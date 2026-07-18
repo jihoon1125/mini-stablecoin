@@ -5,10 +5,14 @@ import {Test} from "forge-std/Test.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {Engine} from "../src/Engine.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
+import {StableCoin} from "../src/StableCoin.sol";
 
 contract EngineTest is Test {
     uint8 constant FEED_DECIMALS = 8;
     int256 constant WETH_USD_PRICE = 2000e8;
+    uint256 public constant COLLATERAL_AMOUNT = 0.1 ether; // $200 (design.md 경계 예시)
+    uint256 public constant TOO_MUCH_DSC = 150 ether; // $150 (HF 0.9)
+    uint256 public constant SAFE_DSC_AMOUNT = 50 ether; // $50 (HF 2.0)
 
     Engine engine;
     ERC20Mock weth;
@@ -23,7 +27,9 @@ contract EngineTest is Test {
         tokens[0] = address(weth);
         address[] memory feeds = new address[](1);
         feeds[0] = address(wethFeed);
-        engine = new Engine(tokens, feeds);
+        StableCoin dsc = new StableCoin();
+        engine = new Engine(tokens, feeds, address(dsc));
+        dsc.transferOwnership(address(engine));
 
         weth.mint(USER, 10e18);
     }
@@ -111,5 +117,37 @@ contract EngineTest is Test {
         // updateAnswer 는 라운드를 1 증가시킨다 (생성자에서 1라운드 -> 2)
         assertEq(roundId, 2);
         assertEq(answeredInRound, 2);
+    }
+
+    function test_mint_revertsIfHealthFactorBroken() public {
+        vm.startPrank(USER);
+        weth.approve(address(engine), COLLATERAL_AMOUNT);
+        engine.depositCollateral(address(weth), COLLATERAL_AMOUNT);
+        // HF = adjusted담보($100) * 1e18 / 부채($150) = 2/3 * 1e18 (정수나눗셈 내림)
+        uint256 expectedHf = uint256(100e18) * 1e18 / 150e18; // = 666666666666666666
+        vm.expectRevert(abi.encodeWithSelector(Engine.Engine__BreaksHealthFactor.selector, expectedHf));
+
+        engine.mintDsc(TOO_MUCH_DSC);
+        vm.stopPrank();
+    }
+
+    function test_mint_succeedsAtExactBoundary() public {
+        // 담보 $200, 부채 $100 → HF 정확히 1.0 → 통과해야 함 (design.md 표 "경계" 케이스)
+        vm.startPrank(USER);
+        weth.approve(address(engine), COLLATERAL_AMOUNT);
+        engine.depositCollateral(address(weth), COLLATERAL_AMOUNT);
+
+        engine.mintDsc(100 ether); // $100
+        vm.stopPrank();
+    }
+
+    function test_mint_succeedsWithSafeMargin() public {
+        // 담보 $200, 부채 $50 → HF 2.0 → 안전
+        vm.startPrank(USER);
+        weth.approve(address(engine), COLLATERAL_AMOUNT);
+        engine.depositCollateral(address(weth), COLLATERAL_AMOUNT);
+
+        engine.mintDsc(50 ether); // $50
+        vm.stopPrank();
     }
 }

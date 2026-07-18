@@ -7,8 +7,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {StableCoin} from "./StableCoin.sol";
 
 contract Engine is ReentrancyGuard {
-    uint256 private constant LIQUIDATION_THRESHOLD = 50;
-    uint256 private constant LIQUIDATION_PRECISION = 100;
+    uint256 private constant LIQUIDATION_THRESHOLD = 50e18;
+    uint256 private constant LIQUIDATION_PRECISION = 100e18;
     uint256 private constant PRECISION = 1e18;
     uint256 private constant MIN_HEALTH_FACTOR = 1e18;
 
@@ -96,6 +96,7 @@ contract Engine is ReentrancyGuard {
     }
 
     function getAccountCollateralValue(address user) public view returns (uint256) {
+        return s_collateral[user][s_collateralTokens[0]] * 2000e18 / PRECISION; // WETH 잔고 * 2000e18 (오라클 없이 임시)
         // 화요일 전까지: WETH 잔고 * 2000e18 (오라클 없이 임시)
         // Week 3부터 getUsdValue(token, amount)로 교체
     }
