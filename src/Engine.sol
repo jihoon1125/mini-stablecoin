@@ -23,6 +23,7 @@ contract Engine is ReentrancyGuard {
     mapping(address user => uint256 amountDscMinted) private s_dscMinted;
 
     event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
+    event CollateralRedeemed(address indexed user, address indexed token, uint256 amount);
 
     address[] private s_collateralTokens;
     StableCoin private immutable i_dsc;
@@ -79,6 +80,26 @@ contract Engine is ReentrancyGuard {
         if (totalDscMinted == 0) return type(uint256).max; // 부채 없음 = HF 무한대 (design.md §3)
         uint256 adjustedCollateral = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
         return (adjustedCollateral * PRECISION) / totalDscMinted;
+    }
+
+    function burnDsc(uint256 amount) external moreThanZero(amount) {
+        s_dscMinted[msg.sender] -= amount;
+        bool success = i_dsc.transferFrom(msg.sender, address(this), amount);
+        if (!success) revert Engine__TransferFailed();
+        i_dsc.burn(amount);
+        _revertIfHealthFactorBroken(msg.sender); // 이론상 항상 개선되지만 방어적으로 체크
+    }
+
+    function redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+        external
+        moreThanZero(amountCollateral)
+        nonReentrant
+    {
+        s_collateral[msg.sender][tokenCollateralAddress] -= amountCollateral;
+        emit CollateralRedeemed(msg.sender, tokenCollateralAddress, amountCollateral);
+        bool success = IERC20(tokenCollateralAddress).transfer(msg.sender, amountCollateral);
+        if (!success) revert Engine__TransferFailed();
+        _revertIfHealthFactorBroken(msg.sender); // CEI: 상태변경 먼저, 출금 후 불변식 재확인
     }
 
     function _revertIfHealthFactorBroken(address user) internal view {
