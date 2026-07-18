@@ -17,6 +17,7 @@ contract EngineTest is Test {
     Engine engine;
     ERC20Mock weth;
     MockV3Aggregator wethFeed;
+    StableCoin dsc;
     address USER = makeAddr("user");
 
     function setUp() public {
@@ -27,7 +28,7 @@ contract EngineTest is Test {
         tokens[0] = address(weth);
         address[] memory feeds = new address[](1);
         feeds[0] = address(wethFeed);
-        StableCoin dsc = new StableCoin();
+        dsc = new StableCoin();
         engine = new Engine(tokens, feeds, address(dsc));
         dsc.transferOwnership(address(engine));
 
@@ -149,5 +150,23 @@ contract EngineTest is Test {
 
         engine.mintDsc(50 ether); // $50
         vm.stopPrank();
+    }
+
+    function test_fullLifecycle() public {
+        vm.startPrank(USER);
+        weth.approve(address(engine), COLLATERAL_AMOUNT);
+        engine.depositCollateral(address(weth), COLLATERAL_AMOUNT);
+        engine.mintDsc(SAFE_DSC_AMOUNT);
+
+        // 불변식 체크: 담보 USD 가치 > 발행된 DSC USD 가치
+        (uint256 minted, uint256 collateralUsd) = engine.getAccountInformation(USER);
+        assertGt(collateralUsd, minted);
+
+        dsc.approve(address(engine), SAFE_DSC_AMOUNT);
+        engine.burnDsc(SAFE_DSC_AMOUNT);
+        engine.redeemCollateral(address(weth), COLLATERAL_AMOUNT);
+        vm.stopPrank();
+
+        assertEq(engine.getCollateralBalance(USER, address(weth)), 0);
     }
 }

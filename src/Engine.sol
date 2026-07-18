@@ -116,6 +116,14 @@ contract Engine is ReentrancyGuard {
         collateralValueInUsd = getAccountCollateralValue(user); // 임시: 하드코딩 2000 USD/ETH
     }
 
+    function getAccountInformation(address user)
+        external
+        view
+        returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
+    {
+        (totalDscMinted, collateralValueInUsd) = _getAccountInformation(user);
+    }
+
     function getAccountCollateralValue(address user) public view returns (uint256) {
         return s_collateral[user][s_collateralTokens[0]] * 2000e18 / PRECISION; // WETH 잔고 * 2000e18 (오라클 없이 임시)
         // 화요일 전까지: WETH 잔고 * 2000e18 (오라클 없이 임시)
