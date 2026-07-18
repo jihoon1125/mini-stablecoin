@@ -4,17 +4,23 @@ pragma solidity ^0.8.20;
 // OZ ReentrancyGuard
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {StableCoin} from "./StableCoin.sol";
 
 contract Engine is ReentrancyGuard {
     error Engine__NeedsMoreThanZero();
     error Engine__TokenNotAllowed();
     error Engine__TransferFailed();
+    error Engine__BreaksHealthFactor(uint256 healthFactorValue);
+    error Engine__MintFailed();
 
     mapping(address user => mapping(address token => uint256 amount)) private s_collateral;
     mapping(address token => address priceFeed) private s_priceFeeds;
-    address[] private s_collateralTokens;
+    mapping(address user => uint256 amountDscMinted) private s_dscMinted;
 
     event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
+
+    address[] private s_collateralTokens;
+    StableCoin private immutable i_dsc;
 
     modifier moreThanZero(uint256 amount) {
         if (amount == 0) {
@@ -29,10 +35,7 @@ contract Engine is ReentrancyGuard {
         _;
     }
 
-    constructor(
-        address[] memory tokens,
-        address[] memory feeds /*, address stableCoin */
-    ) {
+    constructor(address[] memory tokens, address[] memory feeds, address stableCoin) {
         if (tokens.length != feeds.length) {
             revert Engine__NeedsMoreThanZero();
         }
@@ -40,6 +43,8 @@ contract Engine is ReentrancyGuard {
             s_priceFeeds[tokens[i]] = feeds[i];
             s_collateralTokens.push(tokens[i]);
         }
+
+        i_dsc = StableCoin(stableCoin);
     }
 
     function depositCollateral(address token, uint256 amount)
@@ -55,6 +60,27 @@ contract Engine is ReentrancyGuard {
         if (!success) {
             revert Engine__TransferFailed();
         }
+    }
+
+    function mintDsc(uint256 amountDscToMint) external moreThanZero(amountDscToMint) nonReentrant {
+        s_dscMinted[msg.sender] += amountDscToMint;
+        _revertIfHealthFactorBroken(msg.sender); // 화요일에 구현
+        bool minted = i_dsc.mint(msg.sender, amountDscToMint);
+        if (!minted) revert Engine__MintFailed();
+    }
+
+    function _getAccountInformation(address user)
+        private
+        view
+        returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
+    {
+        totalDscMinted = s_dscMinted[user];
+        collateralValueInUsd = getAccountCollateralValue(user); // 임시: 하드코딩 2000 USD/ETH
+    }
+
+    function getAccountCollateralValue(address user) public view returns (uint256) {
+        // 화요일 전까지: WETH 잔고 * 2000e18 (오라클 없이 임시)
+        // Week 3부터 getUsdValue(token, amount)로 교체
     }
 
     function getCollateralBalance(address user, address token) external view returns (uint256) {
