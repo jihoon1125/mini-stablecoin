@@ -169,4 +169,19 @@ contract EngineTest is Test {
 
         assertEq(engine.getCollateralBalance(USER, address(weth)), 0);
     }
+
+    function test_healthFactor_dropsWhenPriceDrops() public {
+        vm.startPrank(USER);
+        weth.approve(address(engine), COLLATERAL_AMOUNT);
+        engine.depositCollateral(address(weth), COLLATERAL_AMOUNT); // $200
+        engine.mintDsc(SAFE_DSC_AMOUNT); // $50, HF=2.0
+        vm.stopPrank();
+
+        int256 crashedPrice = 1000e8; // $2000 → $1000, ETH 반토막
+        wethFeed.updateAnswer(crashedPrice);
+
+        // 담보 가치 $200 → $100, HF = (100*0.5)/50 = 1.0 → 경계
+        uint256 hf = engine.getHealthFactor(USER); // Engine에 public getter 하나 필요(아래 참고)
+        assertEq(hf, 1e18);
+    }
 }

@@ -87,6 +87,10 @@ contract Engine is ReentrancyGuard {
         return (adjustedCollateral * PRECISION) / totalDscMinted;
     }
 
+    function getHealthFactor(address user) public view returns (uint256) {
+        return _healthFactor(user);
+    }
+
     function burnDsc(uint256 amount) external moreThanZero(amount) {
         s_dscMinted[msg.sender] -= amount;
         bool success = i_dsc.transferFrom(msg.sender, address(this), amount);
