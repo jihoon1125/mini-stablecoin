@@ -24,7 +24,7 @@ contract StableCoin is ERC20Burnable, Ownable {
         return true;
     }
 
-    function burn(uint256 amount) public override {
+    function burn(uint256 amount) public override onlyOwner {
         if (amount == 0) {
             revert StableCoin__MustBeMoreThanZero();
         }
