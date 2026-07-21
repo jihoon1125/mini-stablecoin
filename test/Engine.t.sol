@@ -230,4 +230,54 @@ contract EngineTest is Test {
         engine.liquidate(address(weth), USER, 100 ether);
         vm.stopPrank();
     }
+
+    function test_liquidate_partialDebtCoverage() public {
+        vm.startPrank(USER);
+        weth.approve(address(engine), COLLATERAL_AMOUNT);
+        engine.depositCollateral(address(weth), COLLATERAL_AMOUNT);
+        engine.mintDsc(70 ether);
+        vm.stopPrank();
+
+        // 2) 가격 폭락 → HF < 1.0
+        wethFeed.updateAnswer(1000e8); // $2000 → $1000
+
+        vm.startPrank(LIQUIDATOR);
+        weth.approve(address(engine), CLIQ_COLLATERAL);
+        engine.depositCollateral(address(weth), CLIQ_COLLATERAL);
+        engine.mintDsc(50 ether);
+        dsc.approve(address(engine), 50 ether); // 청산 시 대납할 DSC
+        engine.liquidate(address(weth), USER, 50 ether);
+        vm.stopPrank();
+
+        (uint256 userDebt,) = engine.getAccountInformation(USER);
+        assertEq(userDebt, 20 ether);
+    }
+
+    function test_liquidate_revertsIfZeroDebtToCover() public {
+        vm.expectRevert(Engine.Engine__NeedsMoreThanZero.selector);
+        engine.liquidate(address(weth), USER, 0);
+    }
+
+    function test_liquidate_revertsIfHealthFactorNotImproved() public {
+        // (심화, 선택) 보너스가 너무 작아 청산해도 HF가 그대로인 극단 케이스 시뮬 —
+        // design.md §6 "청산 실패 가능성" 섹션과 연결되는 테스트
+        vm.startPrank(USER);
+        uint256 usercollateral = COLLATERAL_AMOUNT; // $200 담보
+        weth.approve(address(engine), usercollateral);
+        engine.depositCollateral(address(weth), usercollateral);
+        engine.mintDsc(100 ether); // $100 부채, HF=1.05*0.5/1=0.525 → 청산 가능
+        vm.stopPrank();
+
+        wethFeed.updateAnswer(1050e8);
+
+        vm.startPrank(LIQUIDATOR);
+        weth.approve(address(engine), CLIQ_COLLATERAL);
+        engine.depositCollateral(address(weth), CLIQ_COLLATERAL);
+        engine.mintDsc(10 ether);
+
+        dsc.approve(address(engine), 10 ether); // 청산 시 대납할 DSC
+        vm.expectRevert(Engine.Engine__HealthFactorNotImproved.selector);
+        engine.liquidate(address(weth), USER, 10 ether);
+        vm.stopPrank();
+    }
 }
