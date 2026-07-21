@@ -13,12 +13,14 @@ contract EngineTest is Test {
     uint256 public constant COLLATERAL_AMOUNT = 0.1 ether; // $200 (design.md 경계 예시)
     uint256 public constant TOO_MUCH_DSC = 150 ether; // $150 (HF 0.9)
     uint256 public constant SAFE_DSC_AMOUNT = 50 ether; // $50 (HF 2.0)
+    uint256 public constant CLIQ_COLLATERAL = COLLATERAL_AMOUNT * 2;
 
     Engine engine;
     ERC20Mock weth;
     MockV3Aggregator wethFeed;
     StableCoin dsc;
     address USER = makeAddr("user");
+    address LIQUIDATOR = makeAddr("liquidator");
 
     function setUp() public {
         weth = new ERC20Mock();
@@ -33,6 +35,7 @@ contract EngineTest is Test {
         dsc.transferOwnership(address(engine));
 
         weth.mint(USER, 10e18);
+        weth.mint(LIQUIDATOR, 10e18);
     }
 
     function test_depositCollateral_updatesBalance() public {
@@ -183,5 +186,48 @@ contract EngineTest is Test {
         // 담보 가치 $200 → $100, HF = (100*0.5)/50 = 1.0 → 경계
         uint256 hf = engine.getHealthFactor(USER); // Engine에 public getter 하나 필요(아래 참고)
         assertEq(hf, 1e18);
+    }
+
+    function test_liquidate_improvesHealthFactor() public {
+        // 1) USER: 담보 $200 예치, $100 발행 (HF=1.0, 경계)
+        vm.startPrank(USER);
+        weth.approve(address(engine), COLLATERAL_AMOUNT);
+        engine.depositCollateral(address(weth), COLLATERAL_AMOUNT);
+        engine.mintDsc(70 ether);
+        vm.stopPrank();
+
+        // 2) 가격 폭락 → HF < 1.0
+        wethFeed.updateAnswer(1000e8); // $2000 → $1000
+
+        // 3) LIQUIDATOR가 청산 실행
+        vm.startPrank(LIQUIDATOR);
+        weth.approve(address(engine), CLIQ_COLLATERAL);
+        engine.depositCollateral(address(weth), CLIQ_COLLATERAL);
+        engine.mintDsc(70 ether);
+        dsc.approve(address(engine), 70 ether); // 청산 시 대납할 DSC
+        engine.liquidate(address(weth), USER, 70 ether);
+        vm.stopPrank();
+
+        // 4) 검증: USER 부채 감소, LIQUIDATOR 담보 증가(보너스 포함)
+        (uint256 userDebt,) = engine.getAccountInformation(USER);
+        assertEq(userDebt, 0);
+    }
+
+    function test_liquidate_revertsIfHealthFactorOk() public {
+        // 건강한 유저(HF≥1.0)를 청산 시도 → Engine__HealthFactorOk revert
+        vm.startPrank(USER);
+        weth.approve(address(engine), COLLATERAL_AMOUNT);
+        engine.depositCollateral(address(weth), COLLATERAL_AMOUNT);
+        engine.mintDsc(100 ether);
+        vm.stopPrank();
+
+        vm.startPrank(LIQUIDATOR);
+        weth.approve(address(engine), CLIQ_COLLATERAL);
+        engine.depositCollateral(address(weth), CLIQ_COLLATERAL);
+        engine.mintDsc(100 ether);
+        dsc.approve(address(engine), 100 ether); // 청산 시 대납할 DSC
+        vm.expectRevert(Engine.Engine__HealthFactorOk.selector);
+        engine.liquidate(address(weth), USER, 100 ether);
+        vm.stopPrank();
     }
 }
