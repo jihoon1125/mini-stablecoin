@@ -171,10 +171,10 @@ contract Engine is ReentrancyGuard {
         uint256 bonusCollateral = (tokenAmountFromDebtCovered * LIQUIDATION_BONUS) / LIQUIDATION_PRECISION;
         uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered + bonusCollateral;
 
-        // 3) Effects: user 담보 차감, 청산자(msg.sender)에게 지급
+        // 3) user 담보 차감, 청산자(msg.sender)에게 지급
         _redeemCollateral(collateral, totalCollateralToRedeem, user, msg.sender);
 
-        // 4) Interactions: 청산자가 DSC로 부채 상환 (청산자가 debtToCover만큼 DSC 보유해야 함)
+        // 4) 청산자가 DSC로 부채 상환 (청산자가 debtToCover만큼 DSC 보유해야 함)
         _burnDsc(debtToCover, user, msg.sender);
 
         // 5) 청산 후에도 상태 개선 확인 (design.md 불변식과 연결)
