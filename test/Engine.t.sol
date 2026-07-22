@@ -7,6 +7,7 @@ import {Engine} from "../src/Engine.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
 import {StableCoin} from "../src/StableCoin.sol";
 import {ReentrantWethMock} from "./mocks/ReentrantWethMock.sol";
+import {OracleLib} from "../src/libraries/OracleLib.sol";
 
 contract EngineTest is Test {
     uint8 constant FEED_DECIMALS = 8;
@@ -292,5 +293,36 @@ contract EngineTest is Test {
         vm.expectRevert(); // nonReentrant가 막아야 함 ("ReentrancyGuard: reentrant call")
         engine.depositCollateral(address(malicious), COLLATERAL_AMOUNT);
         vm.stopPrank();
+    }
+
+    function test_oracleManipulation_suddenPriceSpike() public {
+        // 담보 가치가 순간적으로 치솟으면 과도한 발행이 가능한지 확인
+        vm.startPrank(USER);
+        weth.approve(address(engine), COLLATERAL_AMOUNT);
+        engine.depositCollateral(address(weth), COLLATERAL_AMOUNT); // $200 (가격 $2000 기준)
+        vm.stopPrank();
+
+        wethFeed.updateAnswer(10000e8); // $2000 → $10000, 5배 스파이크
+
+        vm.prank(USER);
+        engine.mintDsc(2000 ether); // 순간 담보가치 기준으론 안전해 보이지만, 실제 시장가는 아닐 수 있음
+        // → 시스템은 오라클을 신뢰할 수밖에 없다는 근본 한계를 재현
+    }
+
+    function test_oracleManipulation_staleRevert() public {
+        // 3시간(TIMEOUT) 이상 가격 안 갱신 시 revert 확인
+        vm.warp(block.timestamp + 4 hours);
+        vm.expectRevert(OracleLib.OracleLib__StalePrice.selector);
+        engine.getUsdValue(address(weth), 1e18);
+    }
+
+    function test_precision_smallAmountsRoundTrip() public {
+        // 아주 작은 금액(1 wei 단위)으로 예치→발행→상환→출금 시 손실 없는지
+    }
+
+    function test_getUsdValue_and_getTokenAmountFromUsd_areInverse() public view {
+        uint256 usd = engine.getUsdValue(address(weth), 1 ether);
+        uint256 backToToken = engine.getTokenAmountFromUsd(address(weth), usd);
+        assertApproxEqAbs(backToToken, 1 ether, 1); // 반올림 오차 1 wei 이내 허용
     }
 }
