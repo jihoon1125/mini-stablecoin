@@ -40,6 +40,24 @@ contract EngineTest is Test {
         weth.mint(LIQUIDATOR, 10e18);
     }
 
+    function test_mint_revertsOnZeroAddress() public {
+        vm.prank(address(engine)); // onlyOwner
+        vm.expectRevert();
+        dsc.mint(address(0), 1);
+    }
+
+    function test_mint_revertsOnZeroAmount() public {
+        vm.prank(address(engine));
+        vm.expectRevert();
+        dsc.mint(USER, 0);
+    }
+
+    function test_burn_revertsOnZeroAmount() public {
+        vm.prank(address(engine));
+        vm.expectRevert();
+        dsc.burn(0);
+    }
+
     function test_depositCollateral_updatesBalance() public {
         vm.startPrank(USER);
         weth.approve(address(engine), 1e18);
