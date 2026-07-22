@@ -6,6 +6,7 @@ import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {Engine} from "../src/Engine.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
 import {StableCoin} from "../src/StableCoin.sol";
+import {ReentrantWethMock} from "./mocks/ReentrantWethMock.sol";
 
 contract EngineTest is Test {
     uint8 constant FEED_DECIMALS = 8;
@@ -278,6 +279,18 @@ contract EngineTest is Test {
         dsc.approve(address(engine), 10 ether); // 청산 시 대납할 DSC
         vm.expectRevert(Engine.Engine__HealthFactorNotImproved.selector);
         engine.liquidate(address(weth), USER, 10 ether);
+        vm.stopPrank();
+    }
+
+    function test_depositCollateral_reentrancyBlocked() public {
+        ReentrantWethMock malicious = new ReentrantWethMock();
+        // engine을 이 악성 토큰으로 재배포하거나, 화이트리스트에 추가한 뒤
+        malicious.setEngine(address(engine), COLLATERAL_AMOUNT);
+
+        vm.startPrank(USER);
+        malicious.approve(address(engine), COLLATERAL_AMOUNT * 2);
+        vm.expectRevert(); // nonReentrant가 막아야 함 ("ReentrancyGuard: reentrant call")
+        engine.depositCollateral(address(malicious), COLLATERAL_AMOUNT);
         vm.stopPrank();
     }
 }
