@@ -305,7 +305,7 @@ contract EngineTest is Test {
         wethFeed.updateAnswer(10000e8); // $2000 → $10000, 5배 스파이크
 
         vm.prank(USER);
-        engine.mintDsc(2000 ether); // 순간 담보가치 기준으론 안전해 보이지만, 실제 시장가는 아닐 수 있음
+        engine.mintDsc(400 ether); // 순간 담보가치 기준으론 안전해 보이지만, 실제 시장가는 아닐 수 있음
         // → 시스템은 오라클을 신뢰할 수밖에 없다는 근본 한계를 재현
     }
 
